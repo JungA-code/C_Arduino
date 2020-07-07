@@ -1,0 +1,617 @@
+﻿#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <DHT11.h>
+#include <SoftwareSerial.h>
+
+ 
+SoftwareSerial bluetooth(2,3);
+
+ 
+
+// RXD =  아두이노 2번, TXD =  3  
+
+ 
+
+/*
+
+ 
+
+PIN 이용현황
+
+ 
+
+6,7 bluetx[이 때 반드시 rx/tx 교차연결!], 13 온습도, lcd 전용핀
+
+ 
+
+ 
+
+ 
+
+12 조도센서, 11 조도센서연계 라이트 -> 앞부분에 배치한다면 코드 수정
+
+s
+
+ 
+
+ 
+
+앞으로 진동감지(지진), 대기농도(환경)정도 추가->대기에 따라 led 변경할 것인가?
+
+ 
+
+화염감지? 일단 기울기는 제거확정
+
+ 
+
+ 
+
+ 
+
+추가할 기능
+
+ 
+
+1. 주행봇: 블루투스 동시연결하여 정지와 가감속 추가
+
+ 
+
+2. 탐색봇: 진동감지, 대기농도 추가
+
+ 
+
+3. 탐색봇: lcv변수를 측정함수 실행 시, 1씩 증가시키고 일정횟수이상이면
+
+ 
+
+   지금까지 조사한 값들의 평균을 계산한다. 이후 lcv는 다시 0으로 초기화
+
+ 
+
+   ---> 이건 힘들면 제외
+
+ 
+
+4. 초음파 센서 혹은 부저 혹은 led를 이용하여 과학수준 표출  
+
+ 
+
+5. 판 제작하기 - 4등분해서 온난건조한랭다습 기후
+
+ 
+
+             - 온난다습 지역에서는 대기센서에 라이터가스, 살짝 판 두드려서 진동
+
+ 
+
+*/
+
+ 
+
+ 
+
+ 
+
+LiquidCrystal_I2C lcd(0x27,16,2);
+
+ 
+
+ 
+String str[] = { "Good" , "NotBad" , "Bad" , "Warning" , "Danger" };
+ 
+
+int dhtPin=13;
+
+int basic_envir=0; //air 초기 측정
+
+DHT11 dht11(dhtPin);
+
+ 
+
+float temp,humi;  //온도&습도
+
+ 
+
+int lightPin=A1; //조도센서 12번
+
+ 
+
+int ledPin=11; //조도이용 led 11번(라이트 앞쪽배치한다면 위치변경, 아니면 아예 앞으로)
+
+ 
+int binPin1 = 4;
+
+int binPin2 = 5;
+
+int binPin4 = 6;
+
+int binPin8 = 7;
+ 
+
+ 
+
+void setup() {
+
+ 
+
+  Serial.begin(9600);
+  
+  pinMode(binPin1, OUTPUT); // 1
+  pinMode(binPin2, OUTPUT); // 2
+  pinMode(binPin4, OUTPUT); // 4
+  pinMode(binPin8, OUTPUT); // 8
+
+  
+  pinMode(ledPin,OUTPUT);
+
+  pinMode(A0,INPUT);
+
+  bluetooth.begin(9600);
+
+ 
+
+  lcd.begin();
+
+ 
+
+  lcd.backlight();
+
+ 
+
+  lcd.setCursor(0,0);
+
+ 
+
+  lcd.print("Start The ");
+
+  lcd.setCursor(0,1);
+
+  lcd.print("Project...");
+ 
+
+  bluetooth.write("Start The Project...\n");
+
+  delay(2000);
+
+ 
+
+  bluetooth.write("Please Waiting ... \n");
+
+  
+
+  delay(4000);
+
+ basic_envir=analogRead(A0); //초기한번 대기측정
+
+}
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+void loop() {
+
+
+  research();
+
+ 
+
+  blueCtl();
+
+  binaryLed();
+}
+
+ 
+
+ 
+
+ 
+
+void research(){ //정보 수집하여 화면 출력
+
+  bluetooth.write("----- dht ------\n");
+
+  dhtCheck();
+
+ 
+  bluetooth.write("----- light ------\n");
+
+  lightCheck();
+
+
+
+  //다음에 출력할 정보로 lcd 코드 변경할 것!
+  
+  bluetooth.write("----- air ------\n");
+
+  airCheck();
+
+}
+
+ 
+
+ 
+
+ 
+
+void lightCheck(){
+
+ 
+
+    Serial.print("Illumination = ");
+
+ 
+
+    Serial.println(analogRead(lightPin));
+
+ 
+
+    String lumiLcd="Illumi:";
+
+ 
+
+    String lumiLight; //if문으로 어두울 땐 str을 on으로 변경하여 화면에 출력
+
+ 
+
+    lumiLcd+=(String)analogRead(lightPin);
+
+    if(analogRead(lightPin)>500){
+        lumiLight="Bright";
+      } 
+    else{
+        lumiLight="Dark";
+      }
+
+    //지금은 조도에 따라 아날로그로 값 변경
+
+ 
+
+    //강의시간에 밝기 측정해서 어두울 때 값을 알아내서 밤에 라이트로 하기.
+
+    analogWrite(ledPin, analogRead(lightPin)/4);
+
+    delay(10);
+
+   lcd.clear();
+
+ 
+
+   lcd.setCursor(0,0);
+
+ 
+
+   lcd.print(lumiLcd);
+
+ 
+
+   lcd.setCursor(0,1);
+
+ 
+
+   lcd.print(lumiLight);
+
+ 
+
+   bluetooth.write("\n");
+
+ 
+
+   bluetooth.print(lumiLcd); //.write()오류나서 일단 print로 해봄. 결과는 모름..
+
+   bluetooth.write("\n");
+
+ 
+
+   //bluetooth.print(lumiLight); //String은 확실히 안되고 byte형은 가능한듯
+
+   //bluetooth.write("\n");
+
+ 
+
+   delay(2000);
+
+ 
+
+   lcd.clear();  //2번째 내용을 화면에 1초간 출력. 이후 화면 초기화.
+
+ 
+
+  }
+
+ 
+
+ 
+
+ 
+
+void dhtCheck(){ //온습도 체크, 시리얼 출력, lcd용으로 문자열생성
+
+  dht11.read(humi, temp);
+
+
+  Serial.print("Temperature= ");
+
+  Serial.println(temp);
+
+ 
+
+  Serial.print("Humidity= ");
+
+  Serial.print(humi);
+
+  delay(500);
+
+
+  String humiLcd="Humidity:";
+
+  humiLcd+=(String)humi;
+
+
+  humiLcd+="%";
+
+
+  String tempLcd="temperature:";
+
+  tempLcd+=(String)temp;
+
+  tempLcd+="C";
+
+
+
+  lcd.setCursor(0,0);
+
+  lcd.print(humiLcd);
+
+
+  lcd.setCursor(0,1);
+ 
+
+  lcd.print(tempLcd);
+
+
+  //일단은 이렇게 write이용해보고 쓰레기값이 자주발생하면 available>0
+
+ 
+
+  //값의 순서가 명확하지 못하면 String buf[]와 int i(index)로 값 전송 시도하자.
+
+  bluetooth.write("\n");
+
+  bluetooth.print(humiLcd);
+
+  bluetooth.write("\n");
+
+ 
+
+  bluetooth.print(tempLcd);
+
+  bluetooth.write("\n");
+
+  delay(2000);  //1초동안 온습도 정보 화면에 출력
+ 
+
+}
+ 
+
+void airCheck(){
+  int num;
+  String airLcd="AirPollution:";
+  //basic_envir=analogRead(A0);
+  num = (analogRead(A0)-basic_envir); //이후값 (이후-초기)
+  if(num<10) //10이하일 때는 안전으로
+  {
+    //안전하다고 출력되도록 다른 조건으로 검사시킴
+    airLcd+=str[0];
+    Serial.println("Safe Zone");
+  }
+  else{
+    num = (analogRead(A0)-basic_envir)/10; //10이상인 경우 10으로 나눠서 판정
+    Serial.println("now air:"); //test코드
+    Serial.println(num); //test코드
+    if(num <= 0){
+      airLcd+=str[0]; //Good
+      Serial.println("Safe Zone");
+  } else if(num>=1 && num<=2){ //10~20
+      airLcd+=str[1]; //notbad
+      Serial.println(str[1]);
+  } 
+    else if(num==3){ //30
+        airLcd+=str[2];
+        Serial.println(str[2]);  //bad
+      }
+    else if(num==4){ //40
+        airLcd+=str[3];
+        Serial.println(str[3]); //warning
+      }
+    else{ //50이상
+      airLcd+=str[4];
+      Serial.println(str[4]); //danger
+  }
+ }
+  
+  
+  //airLcd+="%";
+  
+  lcd.setCursor(0,0);
+
+  lcd.print(airLcd);
+
+  lcd.setCursor(0,1);
+
+   bluetooth.write("\n");
+
+   bluetooth.print(airLcd); //.write()오류나서 일단 print로 해봄. 결과는 모름..
+  
+   bluetooth.write("\n");
+   
+   delay(2000);
+   
+   lcd.clear();  //2번째 내용을 화면에 1초간 출력. 이후 화면 초기화.
+  }
+
+ 
+
+void blueCtl(){
+
+    if(bluetooth.available()){
+      
+        Serial.write(bluetooth.read());
+
+      }
+
+     if(Serial.available()){
+
+          bluetooth.write(Serial.read());
+
+      }
+}
+
+
+void binaryLed(){
+
+      // 1
+      lcd.print("Loading..");
+      bluetooth.print("Loading..");
+      digitalWrite(binPin1, HIGH);
+
+      digitalWrite(binPin2, LOW);
+
+      digitalWrite(binPin4, LOW);
+
+      digitalWrite(binPin8, LOW);
+
+      delay(2000);
+      
+      digitalWrite(binPin1, LOW);
+      delay(2000);
+
+     // +
+
+      digitalWrite(binPin1, HIGH);
+
+      digitalWrite(binPin2, LOW);
+
+      digitalWrite(binPin4, LOW);
+
+      digitalWrite(binPin8, LOW);
+
+      delay(700);
+      
+      
+
+      digitalWrite(binPin1, LOW);
+
+      digitalWrite(binPin2, HIGH);
+
+      digitalWrite(binPin4, LOW);
+
+      digitalWrite(binPin8, LOW);
+
+      delay(700);
+
+      
+
+      digitalWrite(binPin1, LOW);
+
+      digitalWrite(binPin2, LOW);
+
+      digitalWrite(binPin4, HIGH);
+
+      digitalWrite(binPin8, LOW);
+
+      delay(700);
+
+ 
+
+      
+
+      digitalWrite(binPin1, LOW);
+
+      digitalWrite(binPin2, LOW);
+
+      digitalWrite(binPin4, LOW);
+
+      digitalWrite(binPin8, HIGH);
+
+      delay(700);
+
+      digitalWrite(binPin8, LOW);
+      delay(2000);
+
+      // 1
+
+      digitalWrite(binPin1, HIGH);
+
+      digitalWrite(binPin2, LOW);
+
+      digitalWrite(binPin4, LOW);
+
+      digitalWrite(binPin8, LOW);
+
+      delay(2000);
+
+      digitalWrite(binPin1, LOW);
+
+      delay(2000);
+
+ 
+
+ 
+
+     // = 
+
+      digitalWrite(binPin1, HIGH);
+
+      digitalWrite(binPin2, HIGH);
+
+      digitalWrite(binPin4, HIGH);
+
+      digitalWrite(binPin8, HIGH);
+
+      delay(700);
+
+      digitalWrite(binPin1, LOW);
+
+      digitalWrite(binPin2, LOW);
+
+      digitalWrite(binPin4, LOW);
+
+      digitalWrite(binPin8, LOW);
+
+      delay(2000);
+
+
+ 
+
+      // 2
+
+      digitalWrite(binPin1, LOW);
+
+      digitalWrite(binPin2, HIGH);
+
+      digitalWrite(binPin4, LOW);
+
+      digitalWrite(binPin8, LOW);
+
+      delay(2000);
+
+
+      digitalWrite(binPin1, LOW);
+
+      digitalWrite(binPin2, LOW);
+
+      digitalWrite(binPin4, LOW);
+
+      digitalWrite(binPin8, LOW);
+
+      delay(2000); 
+      
+      lcd.clear();
+  }

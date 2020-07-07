@@ -1,0 +1,189 @@
+﻿#include<Servo.h>
+#include<SoftwareSerial.h>
+#define trigPin 5
+#define echoPin 6
+#define SAVE 10 //안전거리
+#define SAVElr 10
+/*
+  문제상황. 팀원들 기기 블루투스 어플 없음
+  후방부에서 스마트폰과 교신한다면 rx/tx 둘다 선점 될 수 있다. 중복이용이 안된다면 어떻게..? 둘 중 하나는 포기해야한다.
+  주행(가감속, 수동) 혹은 전송(센서정보) 뭘 선택해야할까...
+*/
+
+Servo servoUltra; //9
+Servo frontLeft;//13
+Servo frontRight;//12
+Servo backLeft;//11
+Servo backRight;//10
+int distance;
+int distanceLeft=0;
+int distanceRight=0;
+
+int Rspeed=40;
+int Lspeed=40;
+int lcnt=1;
+int rcnt=1;
+
+void setup() {
+  Serial.begin(9600);
+  servoUltra.attach(2); //9에서 임시
+  backRight.attach(10);
+  backLeft.attach(11);
+  //backRight.attach(12);//임시
+  //backLeft.attach(13);
+  frontRight.attach(12);
+  frontLeft.attach(13);
+  pinMode(trigPin,OUTPUT);
+  pinMode(echoPin,INPUT);
+  pinMode(7,OUTPUT);pinMode(8,INPUT);
+  pinMode(3,OUTPUT);pinMode(4,INPUT);
+  servoUltra.write(90);
+
+  
+}
+
+
+
+
+void loop(){
+  Run();
+}
+
+void Run(){  //초음파를 이용한 전방주행, 낭떠러지 판정 포함x
+  int irLeft=irDetect(7,8,41000);  //7:led, 8: receiver
+  int irRight=irDetect(3,4,41000);  //3:led, 4: receiver
+  Serial.print(irLeft);
+  Serial.println(irRight);
+
+  if(lcnt%4==0 && rcnt%4==0){
+        maneuver(-Lspeed,-Rspeed,800);
+        maneuver(Lspeed,-Rspeed,1000);
+        lcnt=1;
+        rcnt=1;
+    }
+  else if(lcnt%4==0){
+        maneuver(-Lspeed,-Rspeed,800);
+        maneuver(Lspeed,-Rspeed,1000);
+        lcnt=1;
+    }
+  else if(rcnt%4==0){
+        maneuver(-Lspeed,-Rspeed,800);
+        maneuver(-Lspeed,Rspeed,1000);
+        rcnt=1;
+    }
+  
+  if((irLeft == 0) && (irRight == 0)){
+    distance=ultraSearch(); //distance값 항시 초기화
+    delay(50); //이동의 오류의 주범
+    if(distance<=SAVE){
+      // 전방 20cm이내 장애물.
+      maneuver(Lspeed,Rspeed,0); //잠시 정지, 이번에 추가한 코드 11/27
+      maneuver(-Lspeed,-Rspeed,500);  //조금 후방이동
+      maneuver(Lspeed,Rspeed,0);
+      servoUltra.write(130);
+      delay(500);
+      distanceLeft=ultraSearch();
+      delay(300);
+
+      //servoUltra.write(90);
+      //distance=ultraSearch();ss
+      //delay(300);
+      
+      servoUltra.write(50);
+      delay(500);
+      distanceRight=ultraSearch();
+      delay(300);
+      
+      servoUltra.write(90);
+      delay(300);
+
+      
+        if(distanceLeft>SAVElr && distanceRight>SAVElr){
+            maneuver(-Lspeed,Rspeed,600);
+        }
+        else if(distanceLeft<=SAVElr && distanceRight>SAVElr){
+            maneuver(Lspeed,-Rspeed,600);
+          }
+        else if(distanceLeft>SAVElr && distanceRight<=SAVElr){
+            maneuver(-Lspeed,Rspeed,600);
+          }
+        else if(distanceLeft<SAVElr && distanceRight<SAVElr){
+          maneuver(-Lspeed,-Rspeed,700);  //값을 크게 줘봄
+          maneuver(-Lspeed,Rspeed,600);
+        }
+
+    } //전방 15이내에 존재한다면
+    
+    else{   
+        // 장애물 X(전진시작)
+          maneuver(Lspeed,Rspeed,10);
+    }
+    
+    delay(30);//작동확인용
+    //초음파모터가 회전할 시간을 충분히 주기위해 크게 설정했으나, 실제 주행에서 오류발생 혹은 속도가 너무 느리다면 개선요구.
+    Serial.print("낭떠러지 x");
+ } //낭떠러지 없는 경우 종료
+ else if(irLeft == 0){
+     //maneuver(-Lspeed,-Rspeed,1000);
+     maneuver(-Lspeed, Rspeed, 800);
+     lcnt++;
+     Serial.print("left safe");
+      }
+ else if(irRight == 0){
+    //maneuver(-Lspeed,-Rspeed,1000);
+    maneuver(Lspeed, -Rspeed, 800);
+    rcnt++;
+    Serial.print("right safe");
+      }
+ else{
+    maneuver(Lspeed,Rspeed,0); //잠시정지
+    maneuver(-Lspeed,-Rspeed,1000);  //값을 크게 키워봄
+    maneuver(-Lspeed,Rspeed,1000);
+    lcnt++;
+    rcnt++;
+    Serial.print("all danger");
+  }
+}
+
+int ultraSearch(){ //초음파 거리반환
+    unsigned int duration;
+    digitalWrite(trigPin,LOW);
+    digitalWrite(echoPin,LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigPin,HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin,LOW);
+    duration=pulseIn(echoPin,HIGH);
+    distance=duration/58;
+    return distance;
+}
+
+int irDetect(int irLedPin, int irReceiverPin, long frequency)
+{ tone(irLedPin, frequency, 8);  // IRLED 38 kHz for at least 1 ms
+  delay(1);                       // Wait 1 ms
+  int ir = digitalRead(irReceiverPin);// IR receiver -> ir variable
+  delay(1);                   // Down time before recheck
+  Serial.print("-");
+  return ir;          
+}
+
+void maneuver(int speedLeft, int speedRight, int msTime)
+{
+  frontLeft.writeMicroseconds(1500 + speedLeft);   //왼쪽 서보속도 설정
+  frontRight.writeMicroseconds(1500 - speedRight);   //오른쪽 서보속도 설정
+  backLeft.writeMicroseconds(1500 + speedLeft);   //왼쪽 서보속도 설정
+  backRight.writeMicroseconds(1500 - speedRight);   //오른쪽 서보속도 설정
+  if(msTime==0)  
+  { frontLeft.writeMicroseconds(1500);
+    frontRight.writeMicroseconds(1500);
+    backLeft.writeMicroseconds(1500);
+    backRight.writeMicroseconds(1500);
+  }
+  else if(msTime==-1)                // if msTime = -1 일 때, 서브모터 제거
+  { frontLeft.detach();
+    frontRight.detach();
+    backLeft.detach();
+    backRight.detach();
+  }
+  delay(msTime);                // 실행시간
+}
